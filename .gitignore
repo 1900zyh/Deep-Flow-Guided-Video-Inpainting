@@ -109,3 +109,11 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+
+
+
+models
+demo
+*.avi
+__init__.py

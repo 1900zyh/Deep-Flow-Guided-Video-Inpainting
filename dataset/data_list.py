@@ -6,7 +6,7 @@ def gen_flow_initial_test_mask_list(flow_root, output_txt_path):
     output_txt = open(output_txt_path, 'w')
 
     flow_list = [x for x in os.listdir(flow_root) if 'flo' in x]
-    flow_no_list = [int(x[:5]) for x in flow_list]
+    flow_no_list = [int(x.split('.')[0]) for x in flow_list]
     flow_start_no = min(flow_no_list)
     flow_num = len(flow_list) // 2
 

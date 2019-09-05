@@ -83,11 +83,12 @@ def parse_argse():
 def extract_flow(args):
     from tools.infer_flownet2 import infer
     output_file = infer(args)
-    flow_list = [x for x in os.listdir(output_file) if '.flo' in x]
-    flow_start_no = min([int(x[:5]) for x in flow_list])
+    flow_list = list([x for x in os.listdir(output_file) if '.flo' in x])
+    flow_list.sort()
+    flow_start_no = flow_list[0]
 
     zero_flow = cvb.read_flow(os.path.join(output_file, flow_list[0]))
-    cvb.write_flow(zero_flow*0, os.path.join(output_file, '%05d.rflo' % flow_start_no))
+    cvb.write_flow(zero_flow*0, os.path.join(output_file, flow_list[0].split('.')[0]+'.rflo'))
     args.DATA_ROOT = output_file
 
 
