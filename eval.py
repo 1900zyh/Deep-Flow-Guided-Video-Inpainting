@@ -18,10 +18,10 @@ from torchvision import transforms
 import torchvision.transforms.functional as F
 import torch.multiprocessing as mp
 
-from models.i3d import InceptionI3d
-from models import metric as module_metric
-from models.metric import get_fid_score
-from models.transform import (
+from core.i3d import InceptionI3d
+from core import metric as module_metric
+from core.metric import get_fid_score
+from core.transform import (
   GroupScale, Stack, ToTorchFormatTensor,
   GroupRandomHorizontalFlip
 )

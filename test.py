@@ -2,180 +2,199 @@ import argparse
 import os
 import sys
 import cvbase as cvb
+import torch
+from torchvision as transforms
+
+from models import resnet_models
+from models import FlowNet2
 from tools.frame_inpaint import DeepFillv1
+from core.transform import Stack, ToTorchFormatTensor
+from core.dataset import dataset
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str,
-                    default=None)
-# FlowNet2
-parser.add_argument('--FlowNet2', action='store_true')
-parser.add_argument('--pretrained_model_flownet2', type=str,
-                    default='./pretrained_models/FlowNet2_checkpoint.pth.tar')
-parser.add_argument('--img_size', type=int, nargs='+',
-                    default=None)
-parser.add_argument('--rgb_max', type=float, default=255.)
-parser.add_argument('--fp16', action='store_true')
-parser.add_argument('--data_list', type=str, default=None, help='Give the data list to extract flow')
-parser.add_argument('--frame_dir', type=str, default=None,
-                    help='Give the dir of the video frames and generate the data list to extract flow')
-parser.add_argument('--PRINT_EVERY', type=int, default=50)
-
-# DFCNet
-parser.add_argument('--DFC', action='store_true')
-parser.add_argument('--ResNet101', action='store_true')
-parser.add_argument('--MS', action='store_true')
-parser.add_argument('--batch_size', type=int, default=1)
-parser.add_argument('--n_threads', type=int, default=16)
-
-parser.add_argument('--get_mask', action='store_true')
-parser.add_argument('--output_root', type=str,
-                    default=None)
-
-parser.add_argument('--DATA_ROOT', type=str,
-                    default=None)
-parser.add_argument('--MASK_ROOT', type=str, default=None)
-parser.add_argument('--FIX_MASK', action='store_true')
-parser.add_argument('--MASK_MODE', type=str, default=None)
-parser.add_argument('--SAVE_FLOW', action='store_true')
-parser.add_argument('--IMAGE_SHAPE', type=int, default=[240, 424], nargs='+')
-parser.add_argument('--RES_SHAPE', type=int, default=[240, 424], nargs='+')
-parser.add_argument('--GT_FLOW_ROOT', type=str,
-                    default=None)
-parser.add_argument('--PRETRAINED_MODEL', type=str, default=None)
-parser.add_argument('--PRETRAINED_MODEL_1', type=str,
-                    default='./pretrained_models/resnet101_movie.pth')
-parser.add_argument('--PRETRAINED_MODEL_2', type=str,
-                    default=None)
-parser.add_argument('--PRETRAINED_MODEL_3', type=str,
-                    default=None)
-parser.add_argument('--INITIAL_HOLE', action='store_true')
-parser.add_argument('--EVAL_LIST', type=str,
-                    default=None)
-parser.add_argument('--enlarge_mask', action='store_true')
-parser.add_argument('--enlarge_kernel', type=int,
-                    default=10)
-
-# Flow-Guided Propagation
-parser.add_argument('--Propagation', action='store_true')
-parser.add_argument('--img_shape', type=int, nargs='+', default=[480, 840],
-                    help='if img_shape[0] is 0, keep the original solution of the video')
-parser.add_argument('--th_warp', type=int, default=40)
-parser.add_argument('--img_root', type=str,
-                    default=None)
-parser.add_argument('--mask_root', type=str,
-                    default=None)
-parser.add_argument('--flow_root', type=str,
-                    default=None)
-parser.add_argument('--output_root_propagation', type=str,
-                    default=None)
-parser.add_argument('--pretrained_model_inpaint', type=str,
-                    default='./pretrained_models/imagenet_deepfill.pth')
-
+parser = argparse.ArgumentParser(description="deep-flow-guided")
+parser.add_argument("-b", type=int, default=1)
+parser.add_argument("-e", type=int, default=0)
+parser.add_argument("-n", type=str, default='youtube-vos') 
+parser.add_argument("-m", type=str, default='fixed') 
 args = parser.parse_args()
+class Object():
+  pass
+
+PRETRAINED_MODEL_flownet2 = './pretrained_models/FlowNet2_checkpoint.pth.tar'
+PRETRAINED_MODEL_inpaint = './pretrained_models/imagenet_deepfill.pth'
+PRETRAINED_MODEL_dfc ='./pretrained_models/resnet50_stage1.pth'
+flow_args = Object() 
+flow_args.rgb_max = 255.
+flow_args.fp16 = True
 
 
-def extract_flow(args):
-    from tools.infer_flownet2 import infer
-    output_file = infer(args)
-    flow_list = list([x for x in os.listdir(output_file) if '.flo' in x])
-    flow_list.sort()
-    flow_start_no = flow_list[0]
 
-    zero_flow = cvb.read_flow(os.path.join(output_file, flow_list[0]))
-    cvb.write_flow(zero_flow*0, os.path.join(output_file, flow_list[0].split('.')[0]+'.rflo'))
-    args.DATA_ROOT = output_file
+IMG_SIZE = (424, 240)
+FLOW_SIZE = (448, 256)
+th_warp=40
+default_fps = 6
+_to_tensors = transforms.Compose([
+  Stack(),
+  ToTorchFormatTensor()])
 
 
-def flow_completion(args):
 
-    data_list_dir = os.path.join(args.dataset_root, 'data')
-    if not os.path.exists(data_list_dir):
-        os.makedirs(data_list_dir)
-    initial_data_list = os.path.join(data_list_dir, 'initial_test_list.txt')
-    print('Generate datalist for initial step')
+def to_img(x):
+  tmp = (x[0,:,0,:,:].cpu().data.numpy().transpose((1,2,0))+1)/2
+  tmp = np.clip(tmp,0,1)*255.
+  return tmp.astype(np.uint8)
 
-    from dataset.data_list import gen_flow_initial_test_mask_list
-    gen_flow_initial_test_mask_list(flow_root=args.DATA_ROOT,
-                                    output_txt_path=initial_data_list)
-    args.EVAL_LIST = os.path.join(data_list_dir, 'initial_test_list.txt')
+# set parameter to gpu or cpu
+def set_device(args):
+  if torch.cuda.is_available():
+    if isinstance(args, list):
+      return (item.cuda() for item in args)
+    else:
+      return args.cuda()
+  return args
 
-    from tools.test_scripts import test_initial_stage
-    args.output_root = os.path.join(args.dataset_root, 'Flow_res', 'initial_res')
-    args.PRETRAINED_MODEL = args.PRETRAINED_MODEL_1
-
-    if args.img_size is not None:
-        args.IMAGE_SHAPE = [args.img_size[0] // 2, args.img_size[1] // 2]
-        args.RES_SHAPE = args.IMAGE_SHAPE
-
-    print('Flow Completion in First Step')
-    test_initial_stage(args)
-    args.flow_root = args.output_root
-
-    if args.MS:
-        args.ResNet101 = False
-        from tools.test_scripts import test_refine_stage
-        args.PRETRAINED_MODEL = args.PRETRAINED_MODEL_2
-        args.IMAGE_SHAPE = [320, 600]
-        args.RES_SHAPE = [320, 600]
-        args.DATA_ROOT = args.output_root
-        args.output_root = os.path.join(args.dataset_root, 'Flow_res', 'stage2_res')
-
-        stage2_data_list = os.path.join(data_list_dir, 'stage2_test_list.txt')
-        from dataset.data_list import gen_flow_refine_test_mask_list
-        gen_flow_refine_test_mask_list(flow_root=args.DATA_ROOT,
-                                       output_txt_path=stage2_data_list)
-        args.EVAL_LIST = stage2_data_list
-        test_refine_stage(args)
-
-        args.PRETRAINED_MODEL = args.PRETRAINED_MODEL_3
-        args.IMAGE_SHAPE = [480, 840]
-        args.RES_SHAPE = [480, 840]
-        args.DATA_ROOT = args.output_root
-        args.output_root = os.path.join(args.dataset_root, 'Flow_res', 'stage3_res')
-
-        stage3_data_list = os.path.join(data_list_dir, 'stage3_test_list.txt')
-        from dataset.data_list import gen_flow_refine_test_mask_list
-        gen_flow_refine_test_mask_list(flow_root=args.DATA_ROOT,
-                                       output_txt_path=stage3_data_list)
-        args.EVAL_LIST = stage3_data_list
-        test_refine_stage(args)
-        args.flow_root = args.output_root
+def get_clear_state_dict(old_state_dict):
+  from collections import OrderedDict
+  new_state_dict = OrderedDict()
+  for k,v in old_state_dict.items():
+    name = k 
+    if k.startswith('module.'):
+      name = k[7:]
+    new_state_dict[name] = v
+  return new_state_dict
 
 
-def flow_guided_propagation(args):
+def propagation(flo, rflo, images, masks):
+  while masked_frame_num > 0:
+    # forward
+    results = [np.zeros(image.shape + (2,), dtype=image.dtype) for _ in range(frames_num)]
+    time_stamp = [-np.ones(image.shape[:2] + (2,), dtype=int) for _ in range(frames_num)]
+    label = (label > 0).astype(np.uint8)
+    image[label > 0, :] = 0
+    results[0][..., 0] = image
+    time_stamp[0][label == 0, 0] = 0
+    for th in range(1, frames_num):
+      flow1 = flo[th]
+      flow2 = flo[th+1]
+      temp1 = flo.get_warp_label(flow1, flow2, results[th - 1][..., 0], th=th_warp)
+      temp2 = flo.get_warp_label(flow1, flow2, time_stamp[th - 1], th=th_warp, value=-1)[..., 0]
+      results[th][..., 0] = temp1
+      time_stamp[th][..., 0] = temp2
+      results[th][label == 0, :, 0] = image[label == 0, :]
+      time_stamp[th][label == 0, 0] = th
 
-    deepfill_model = DeepFillv1(pretrained_model=args.pretrained_model_inpaint,
-                                image_shape=args.img_shape)
+    # backward
+    results[frames_num - 1][..., 1] = image
+    time_stamp[frames_num - 1][label == 0, 1] = frames_num - 1
+    for th in range(frames_num - 2, -1, -1):
+      flow1 = flo[th]
+      flow2 = flo[th+1]
+      temp1 = flo.get_warp_label(flow1, flow2, results[th + 1][..., 1], th=th_warp)
+      temp2 = flo.get_warp_label(flow1, flow2, time_stamp[th + 1], value=-1, th=th_warp,)[..., 1]
+      results[th][..., 1] = temp1
+      time_stamp[th][..., 1] = temp2
+      results[th][label == 0, :, 1] = image[label == 0, :]
+      time_stamp[th][label == 0, 1] = th
 
-    from tools.propagation_inpaint import propagation
-    propagation(args,
-                frame_inapint_model=deepfill_model)
+    # merge
+    for th in range(0, frames_num - 1):
+      v1 = (time_stamp[th][..., 0] == -1)
+      v2 = (time_stamp[th][..., 1] == -1)
+      hole_v = (v1 & v2)
+      result = results[th][..., 0].copy()
+      result[v1, :] = results[th][v1, :, 1].copy()
+
+      v3 = ((v1 == 0) & (v2 == 0))
+      dist = time_stamp[th][..., 1] - time_stamp[th][..., 0]
+      dist[dist < 1] = 1
+
+      w2 = (th - time_stamp[th][..., 0]) / dist
+      w2 = (w2 > 0.5).astype(np.float)
+
+      result[v3, :] = (results[th][..., 1] * w2[..., np.newaxis] +
+                        results[th][..., 0] * (1 - w2)[..., np.newaxis])[v3, :]
+
+      result_pool[th] = result.copy()
+      tmp_mask = np.zeros_like(result)
+      tmp_mask[hole_v, :] = 255
+      label_pool[th] = tmp_mask.copy()
+      tmp_label_seq[th] = np.sum(tmp_mask)
+
+      sys.stdout.write('\n')
+      frame_inpaint_seq[tmp_label_seq == 0] = 0
+      masked_frame_num = np.sum((frame_inpaint_seq > 0).astype(np.int))
+      print(masked_frame_num)
+      iter_num += 1
+
+    # inpaint unseen part
+    with torch.no_grad():
+      tmp_inpaint_res = frame_inapint_model.forward(result_pool[id], label_pool[id])
+    label_pool[id] = label_pool[id] * 0.
+    result_pool[id] = tmp_inpaint_res
+    
 
 
-def main():
-    args = parse_argse()
 
-    if args.frame_dir is not None:
-        args.dataset_root = os.path.dirname(args.frame_dir)
-    if args.FlowNet2:
-        extract_flow(args)
+def main_worker(gpu, ngpus_per_node):
+  if ngpus_per_node > 1:
+    torch.cuda.set_device(int(gpu))
+  # model preparation
+  # flownet: used for extracting optical flow
+  Flownet = FlowNet2(flow_args, requires_grad=False)
+  flownet2_ckpt = torch.load(PRETRAINED_MODEL_flownet2, map_location = lambda storage, loc: set_device(storage))
+  Flownet.load_state_dict(get_clear_state_dict(flownet2_ckpt['state_dict']))
+  set_device(Flownet)
+  Flownet.eval()
+  # dfc_resnet: used for completing optical_flow
+  dfc_resnet = resnet_models.Flow_Branch_Multi(input_chanels=33, NoLabels=2)
+  ckpt_dict = torch.load(PRETRAINED_MODEL_dfc, map_location = lambda storage, loc: set_device(storage))
+  dfc_resnet.load_state_dict(get_clear_state_dict(ckpt_dict['model']), strict=strict)
+  set_device(dfc_resnet)
+  dfc_resnet.eval()
+  # deepfill: used for image inpainting on unseen part
+  deepfill_model = DeepFillv1(pretrained_model=args.pretrained_model_inpaint, image_shape=args.img_shape)
 
-    if args.DFC:
-        flow_completion(args)
+  # dataset 
+  DTset = dataset(DATA_NAME, MASK_TYPE, size=IMG_SIZE)
+  step = math.ceil(len(DTset) / ngpus_per_node)
+  DTset.set_subset(gpu*step, min(gpu*step+step, len(DTset)))
+  Trainloader = data.DataLoader(DTset, batch_size=1, shuffle=False, num_workers=1)
 
-    # set propagation args
-    assert args.mask_root is not None or args.MASK_ROOT is not None
-    args.mask_root = args.MASK_ROOT if args.mask_root is None else args.mask_root
-    args.img_root = args.frame_dir
+  with torch.no_grad():
+    for seq, (frames, masks, gts, info) in enumerate(Trainloader):
+      # extracting flow
+      flo = []
+      rflo = []
+      for idx in range(len(frames)):
+        f1, f2 = set_device(frames[idx], frames[idx+1])
+        f1 = F.interpolate(f1, FLOW_SIZE)
+        f2 = F.interpolate(f2, FLOW_SIZE)
+        flow = Flownet(f1, f2)
+        flow = F.interpolate(flow, IMG_SIZE)
+        flow[0,...] = flow[0, ...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
+        flow[1,...] = flow[1, ...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+      # flow completion 
+      comp_flo = []
+      com_rflo = []
+      for flo in range(len(flo)):
+        res_flow = dfc_resnet(input_x)
+        res_complete = res_flow * mask[:, 10:11, :, :] + flow_masked[:, 10:12, :, :] * (1. - mask[:, 10:11, :, :])
+      # flow_guided_propagation
+      propagation(args, frame_inapint_model=deepfill_model)
 
-    if args.output_root_propagation is None:
-        args.output_root_propagation = os.path.join(args.dataset_root, 'Inpaint_Res')
-    if args.img_size is not None:
-        args.img_shape = args.img_size
-    if args.Propagation:
-        flow_guided_propagation(args)
+
 
 
 if __name__ == '__main__':
-    main()
+  ngpus_per_node = torch.cuda.device_count()
+  print('Using {} GPUs for testing {}_{}... '.format(ngpus_per_node, DATA_NAME, MASK_TYPE))
+  processes = []
+  mp.set_start_method('spawn', force=True)
+  for rank in range(ngpus_per_node):
+    p = mp.Process(target=main_worker, args=(rank, ngpus_per_node))
+    p.start()
+    processes.append(p)
+  for p in processes:
+    p.join()
+  print('Finished testing for {}_{}'.format(DATA_NAME, MASK_TYPE))
