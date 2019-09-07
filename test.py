@@ -1,14 +1,14 @@
 import argparse
 import os
 import sys
+import math
 import cvbase as cvb
 import torch
-from torchvision as transforms
+import torch.multiprocessing as mp
 
 from models import resnet_models
 from models import FlowNet2
 from tools.frame_inpaint import DeepFillv1
-from core.transform import Stack, ToTorchFormatTensor
 from core.dataset import dataset
 
 
@@ -35,10 +35,6 @@ IMG_SIZE = (424, 240)
 FLOW_SIZE = (448, 256)
 th_warp=40
 default_fps = 6
-_to_tensors = transforms.Compose([
-  Stack(),
-  ToTorchFormatTensor()])
-
 
 
 def to_img(x):
@@ -148,21 +144,20 @@ def main_worker(gpu, ngpus_per_node):
   # dfc_resnet: used for completing optical_flow
   dfc_resnet = resnet_models.Flow_Branch_Multi(input_chanels=33, NoLabels=2)
   ckpt_dict = torch.load(PRETRAINED_MODEL_dfc, map_location = lambda storage, loc: set_device(storage))
-  dfc_resnet.load_state_dict(get_clear_state_dict(ckpt_dict['model']), strict=strict)
+  dfc_resnet.load_state_dict(get_clear_state_dict(ckpt_dict['model']))
   set_device(dfc_resnet)
   dfc_resnet.eval()
   # deepfill: used for image inpainting on unseen part
-  deepfill_model = DeepFillv1(pretrained_model=args.pretrained_model_inpaint, image_shape=args.img_shape)
+  deepfill_model = DeepFillv1(pretrained_model=PRETRAINED_MODEL_inpaint, image_shape=IMG_SIZE)
 
   # dataset 
   DTset = dataset(DATA_NAME, MASK_TYPE, size=IMG_SIZE)
   step = math.ceil(len(DTset) / ngpus_per_node)
   DTset.set_subset(gpu*step, min(gpu*step+step, len(DTset)))
-  Trainloader = data.DataLoader(DTset, batch_size=1, shuffle=False, num_workers=1)
+  Trainloader = torch.utils.data.DataLoader(DTset, batch_size=1, shuffle=False, num_workers=1)
   save_path = 'results/{}_{}'.format(DATA_NAME, MASK_TYPE)
   print('GPU-{}: finished building models, begin test for {} ...'.format(
     gpu, save_path))
-  return 0 
 
   with torch.no_grad():
     for seq, (frames, masks, gts, info) in enumerate(Trainloader):
