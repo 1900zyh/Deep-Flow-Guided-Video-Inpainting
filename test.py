@@ -2,9 +2,13 @@ import argparse
 import os
 import sys
 import math
+import numpy as np 
+import random
+import datetime
 import cvbase as cvb
 import torch
 import torch.multiprocessing as mp
+import torch.nn.functional as F
 
 from models import resnet_models
 from models import FlowNet2
@@ -27,10 +31,19 @@ PRETRAINED_MODEL_dfc ='./pretrained_models/resnet50_stage1.pth'
 flow_args = Object() 
 flow_args.rgb_max = 255.
 flow_args.fp16 = True
+# set random seed 
+seed = 2020
+torch.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = True
 
 
 DATA_NAME = args.n 
 MASK_TYPE = args.m
+K = 5
 IMG_SIZE = (424, 240)
 FLOW_SIZE = (448, 256)
 th_warp=40
@@ -41,6 +54,7 @@ def to_img(x):
   tmp = (x[0,:,0,:,:].cpu().data.numpy().transpose((1,2,0))+1)/2
   tmp = np.clip(tmp,0,1)*255.
   return tmp.astype(np.uint8)
+
 
 # set parameter to gpu or cpu
 def set_device(args):
@@ -148,10 +162,10 @@ def main_worker(gpu, ngpus_per_node):
   set_device(dfc_resnet)
   dfc_resnet.eval()
   # deepfill: used for image inpainting on unseen part
-  deepfill_model = DeepFillv1(pretrained_model=PRETRAINED_MODEL_inpaint, image_shape=IMG_SIZE)
+  deepfill_model = DeepFillv1(pretrained_model=PRETRAINED_MODEL_inpaint, image_shape=FLOW_SIZE)
 
   # dataset 
-  DTset = dataset(DATA_NAME, MASK_TYPE, size=IMG_SIZE)
+  DTset = dataset(DATA_NAME, MASK_TYPE, size=FLOW_SIZE)
   step = math.ceil(len(DTset) / ngpus_per_node)
   DTset.set_subset(gpu*step, min(gpu*step+step, len(DTset)))
   Trainloader = torch.utils.data.DataLoader(DTset, batch_size=1, shuffle=False, num_workers=1)
@@ -161,25 +175,38 @@ def main_worker(gpu, ngpus_per_node):
 
   with torch.no_grad():
     for seq, (frames, masks, gts, info) in enumerate(Trainloader):
+      length = len(frames)
       # extracting flow
+      print('[{}] {}/{}: {} for {} frames ...'.format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+        seq, len(Trainloader), info['vnames'], length))
       flo = []
       rflo = []
-      for idx in range(len(frames)):
-        f1, f2 = set_device(frames[idx], frames[idx+1])
-        f1 = F.interpolate(f1, FLOW_SIZE)
-        f2 = F.interpolate(f2, FLOW_SIZE)
-        flow = Flownet(f1, f2)
-        flow = F.interpolate(flow, IMG_SIZE)
-        flow[0,...] = flow[0, ...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
-        flow[1,...] = flow[1, ...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
-      # flow completion 
-      comp_flo = []
-      com_rflo = []
-      for flo in range(len(flo)):
-        res_flow = dfc_resnet(input_x)
-        res_complete = res_flow * mask[:, 10:11, :, :] + flow_masked[:, 10:12, :, :] * (1. - mask[:, 10:11, :, :])
-      # flow_guided_propagation
-      propagation(args, frame_inapint_model=deepfill_model)
+      for idx in range(length):
+        id1, id2, id3 = max(0, idx), idx, min(idx, length-1)
+        if id2 < id3:
+          f2, f3 = set_device([frames[id2], frames[id3]])
+          f = FlowNet2(f2, f3)
+          f = F.interpolate(f, IMG_SIZE)
+          f[0,...] = f[0, ...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
+          f[1,...] = f[1, ...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          flo.append(f)
+        if id1 < id2:
+          f1, f2 = set_device([frames[id1], frames[id2]])
+          f = FlowNet2(f1, f2)
+          f = F.interpolate(f, IMG_SIZE)
+          f[0,...] = f[0, ...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
+          f[1,...] = f[1, ...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          rflo.append(f)
+      # # flow completion 
+      # comp_flo = []
+      # com_rflo = []
+      # for idx in range(length):
+      #   flow = [flo[0]]*(max(0, len(K-idx))) + frames[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
+      #   mask = 
+      #   res_flow = dfc_resnet(input_x)
+      #   res_complete = res_flow * mask[:, 10:11, :, :] + flow_masked[:, 10:12, :, :] * (1. - mask[:, 10:11, :, :])
+      # # flow_guided_propagation
+      # propagation(args, frame_inapint_model=deepfill_model)
 
 
 

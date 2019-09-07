@@ -77,13 +77,13 @@ class dataset(data.Dataset):
     for f, name in enumerate(frame_names):
       image_ = ZipReader.imread('../datazip/{}/JPEGImages/{}.zip'.format(self.data_name, video), name)
       image_ = cv2.resize(image_, self.size, cv2.INTER_CUBIC)
-      image_ = np.float32(image_)/255.0
-      gts.append(torch.from_numpy(image_).permute(2,0,1))
+      image_ = torch.from_numpy(image_).permute(2,0,1).contiguous().float()
+      gts.append(image_)
 
       mask_ = self._get_masks(index, video, f)
-      mask_ = cv2.resize(mask_, self.size, cv2.INTER_NEAREST)
-      masks.append(torch.from_numpy(mask_))
-      inps.append(torch.from_numpy(image_ * mask_).permute(2,0,1))
+      mask_ = torch.from_numpy(cv2.resize(mask_, self.size, cv2.INTER_NEAREST)).float()
+      masks.append(mask_)
+      inps.append(image_ * (1.-mask_))
 
     return inps, masks, gts, info
 
