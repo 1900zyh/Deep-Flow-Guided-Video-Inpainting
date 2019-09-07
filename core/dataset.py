@@ -76,7 +76,7 @@ class dataset(data.Dataset):
     
     for f, name in enumerate(frame_names):
       image_ = ZipReader.imread('../datazip/{}/JPEGImages/{}.zip'.format(self.data_name, video), name)
-      image_ = cv2.resize(image_, self.size, cv2.INTER_CUBIC)
+      image_ = cv2.resize(np.array(image_), self.size, cv2.INTER_CUBIC)
       image_ = torch.from_numpy(image_).permute(2,0,1).contiguous().float()
       gts.append(image_)
 
