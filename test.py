@@ -29,7 +29,8 @@ flow_args.rgb_max = 255.
 flow_args.fp16 = True
 
 
-
+DATA_NAME = args.n 
+MASK_TYPE = args.m
 IMG_SIZE = (424, 240)
 FLOW_SIZE = (448, 256)
 th_warp=40
@@ -134,8 +135,6 @@ def propagation(flo, rflo, images, masks):
     result_pool[id] = tmp_inpaint_res
     
 
-
-
 def main_worker(gpu, ngpus_per_node):
   if ngpus_per_node > 1:
     torch.cuda.set_device(int(gpu))
@@ -160,6 +159,10 @@ def main_worker(gpu, ngpus_per_node):
   step = math.ceil(len(DTset) / ngpus_per_node)
   DTset.set_subset(gpu*step, min(gpu*step+step, len(DTset)))
   Trainloader = data.DataLoader(DTset, batch_size=1, shuffle=False, num_workers=1)
+  save_path = 'results/{}_{}'.format(DATA_NAME, MASK_TYPE)
+  print('GPU-{}: finished building models, begin test for {} ...'.format(
+    gpu, save_path))
+  return 0 
 
   with torch.no_grad():
     for seq, (frames, masks, gts, info) in enumerate(Trainloader):
