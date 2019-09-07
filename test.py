@@ -174,39 +174,45 @@ def main_worker(gpu, ngpus_per_node):
     gpu, save_path))
 
   with torch.no_grad():
-    for seq, (frames, masks, gts, info) in enumerate(Trainloader):
-      length = len(frames)
+    for seq, (frames_, masks_, gts_, info_) in enumerate(Trainloader):
+      length = len(frames_)
       # extracting flow
       print('[{}] {}/{}: {} for {} frames ...'.format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-        seq, len(Trainloader), info['vnames'], length))
+        seq, len(Trainloader), info_['vnames'], length))
       flo = []
       rflo = []
       for idx in range(length):
         id1, id2, id3 = max(0, idx), idx, min(idx, length-1)
         if id2 < id3:
-          f2, f3 = set_device([frames[id2], frames[id3]])
+          f2, f3 = set_device([frames_[id2], frames_[id3]])
           f = FlowNet2(f2, f3)
           f = F.interpolate(f, IMG_SIZE)
-          f[0,...] = f[0, ...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
-          f[1,...] = f[1, ...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f[0,0,...] = f[0,0,...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
+          f[0,1,...] = f[0,1,...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           flo.append(f)
         if id1 < id2:
-          f1, f2 = set_device([frames[id1], frames[id2]])
+          f1, f2 = set_device([frames_[id1], frames_[id2]])
           f = FlowNet2(f1, f2)
           f = F.interpolate(f, IMG_SIZE)
-          f[0,...] = f[0, ...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
-          f[1,...] = f[1, ...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f[0,0,...] = f[0,0,...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
+          f[0,1,...] = f[0,1,...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           rflo.append(f)
-      # # flow completion 
-      # comp_flo = []
-      # com_rflo = []
-      # for idx in range(length):
-      #   flow = [flo[0]]*(max(0, len(K-idx))) + frames[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
-      #   mask = 
-      #   res_flow = dfc_resnet(input_x)
-      #   res_complete = res_flow * mask[:, 10:11, :, :] + flow_masked[:, 10:12, :, :] * (1. - mask[:, 10:11, :, :])
-      # # flow_guided_propagation
-      # propagation(args, frame_inapint_model=deepfill_model)
+      flo.append(f*0)
+      rflo.insert(0, f*0)
+      # flow completion 
+      comp_flo = []
+      com_rflo = []
+      for idx in range(length):
+        # flo
+        flow = [flo[0]]*(max(0, len(K-idx))) + flo[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
+        mask = [masks_[0]]*(max(0, len(K-idx))) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
+        flow_masked = [f*m for f,m in zip(flow, mask)]
+        input_x = torch.cat(flow_masked, dim=1)
+        # initial holes
+        flow_pred = dfc_resnet(input_x)
+        res_complete = flow_pred * masks_[idx] + flow_pred * (1. - masks_[idx])
+      # flow_guided_propagation
+      propagation(args, frame_inapint_model=deepfill_model)
 
 
 
