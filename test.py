@@ -201,7 +201,7 @@ def main_worker(gpu, ngpus_per_node):
       rflo.insert(0, f*0)
       # flow completion 
       comp_flo = []
-      com_rflo = []
+      comp_rflo = []
       for idx in range(length):
         # flo
         flow = [flo[0]]*(max(0, len(K-idx))) + flo[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
@@ -211,8 +211,18 @@ def main_worker(gpu, ngpus_per_node):
         # initial holes
         flow_pred = dfc_resnet(input_x)
         res_complete = flow_pred * masks_[idx] + flow_pred * (1. - masks_[idx])
-      # flow_guided_propagation
-      propagation(args, frame_inapint_model=deepfill_model)
+        comp_flo.append(res_complete)
+        # rflo
+        flow = [rflo[0]]*(max(0, len(K-idx))) + rflo[max(0, idx-5):min(idx+5, length)] + [rflo[-1]]*(max(0, K+idx-length))
+        mask = [masks_[0]]*(max(0, len(K-idx))) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
+        flow_masked = [f*m for f,m in zip(flow, mask)]
+        input_x = torch.cat(flow_masked, dim=1)
+        # initial holes
+        flow_pred = dfc_resnet(input_x)
+        res_complete = flow_pred * masks_[idx] + flow_pred * (1. - masks_[idx])
+        comp_rflo.append(res_complete)
+      # # flow_guided_propagation
+      # propagation(args, frame_inapint_model=deepfill_model)
 
 
 
