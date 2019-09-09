@@ -177,6 +177,7 @@ def main_worker(gpu, ngpus_per_node):
   with torch.no_grad():
     for seq, (frames_, masks_, gts_, info_) in enumerate(Trainloader):
       length = len(frames_)
+      masks_ = list(set_device(list(masks_)))
       # extracting flow
       print('[{}] {}/{}: {} for {} frames ...'.format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
         seq, len(Trainloader), info_['vnames'], length))
@@ -205,9 +206,9 @@ def main_worker(gpu, ngpus_per_node):
       comp_rflo = []
       for idx in range(length):
         # flo
-        tmp_flo = [flo[0]]*(max(0, K-idx)) + flo[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
-        tmp_rflo = [rflo[0]]*(max(0, len(K-idx))) + rflo[max(0, idx-5):min(idx+5, length)] + [rflo[-1]]*(max(0, K+idx-length))
-        tmp_mask = [masks_[0]]*(max(0, K-idx)) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
+        tmp_flo = [flo[0]]*(max(0, K-idx)) + flo[max(0, idx-K):min(idx+K+1, length)] + [flo[-1]]*(max(0, K+idx+1-length))
+        tmp_rflo = [rflo[0]]*(max(0, K-idx)) + rflo[max(0, idx-K):min(idx+K+1, length)] + [rflo[-1]]*(max(0, K+idx+1-length))
+        tmp_mask = [masks_[0]]*(max(0, K-idx)) + masks_[max(0, idx-K):min(idx+K+1, length)] + [masks_[-1]]*(max(0, K+idx+1-length))
         mask_flo = [torch.cat([f,m], dim=1) for f,m in zip(tmp_flo, tmp_mask)]
         mask_rflo = [torch.cat([f,m], dim=1) for f,m in zip(tmp_rflo, tmp_mask)]
         # flo 

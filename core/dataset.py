@@ -80,20 +80,20 @@ class dataset(data.Dataset):
       image_ = cv2.resize(np.array(image_), self.img_size, cv2.INTER_CUBIC)
       gts.append(torch.from_numpy(image_).permute(2,0,1).contiguous().float())
 
-      mask_ = self._get_masks(index, video, f)
+      mask_ = self._get_masks(self.img_size, index, video, f)
       mask_ = cv2.resize(mask_, self.img_size, cv2.INTER_NEAREST)
-      masks.append(torch.from_numpy(mask_).float())
+      masks.append(torch.from_numpy(mask_).float().unsqueeze(0))
       mask_ = torch.from_numpy(cv2.resize(mask_, self.flow_size, cv2.INTER_NEAREST)).float()
-      image_ = torch.from_numpy(cv2.resize(image_, self.flow_size, cv2.INTER_CUBIC)).float()
+      image_ = torch.from_numpy(cv2.resize(image_, self.flow_size, cv2.INTER_CUBIC)).permute(2,0,1).contiguous().float()
       inps.append(image_ * (1.-mask_))
 
     return inps, masks, gts, info
 
 
-  def _get_masks(self, index, video, i):
-    h, w = self.size
+  def _get_masks(self, size, index, video, i):
+    h, w = size
     if self.mask_type == 'fixed':
-      m = np.zeros(self.size, np.uint8)
+      m = np.zeros(size, np.uint8)
       m[h//2-h//8:h//2+h//8, w//2-w//8:w//2+w//8] = 1
       return m
     elif self.mask_type == 'object':
