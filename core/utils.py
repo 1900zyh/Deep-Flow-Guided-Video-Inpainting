@@ -46,8 +46,8 @@ def propagation(deepfill, flo, rflo, images_, masks_):
       else:
         image = result_pool[th]
         label = label_pool[th]
-      flow1 = flo[th][0].permute(1,2,0).data.cpu().numpy()
-      flow2 = flo[th+1][0].permute(1,2,0).data.cpu().numpy()
+      flow1 = flo[th-1][0].permute(1,2,0).data.cpu().numpy()
+      flow2 = flo[th][0].permute(1,2,0).data.cpu().numpy()
       label = (label>0).astype(np.uint8)
       image[(label>0), :] = 0
       temp1 = get_warp_label(flow1, flow2, results[th - 1][..., 0], th=th_warp)
