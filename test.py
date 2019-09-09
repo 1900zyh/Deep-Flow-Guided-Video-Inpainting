@@ -166,7 +166,7 @@ def main_worker(gpu, ngpus_per_node):
   deepfill_model = DeepFillv1(pretrained_model=PRETRAINED_MODEL_inpaint, image_shape=FLOW_SIZE)
 
   # dataset 
-  DTset = dataset(DATA_NAME, MASK_TYPE, size=FLOW_SIZE)
+  DTset = dataset(DATA_NAME, MASK_TYPE, flow_size=FLOW_SIZE, img_size=IMG_SIZE)
   step = math.ceil(len(DTset) / ngpus_per_node)
   DTset.set_subset(gpu*step, min(gpu*step+step, len(DTset)))
   Trainloader = torch.utils.data.DataLoader(DTset, batch_size=1, shuffle=False, num_workers=1)
@@ -205,23 +205,19 @@ def main_worker(gpu, ngpus_per_node):
       comp_rflo = []
       for idx in range(length):
         # flo
-        flow = [flo[0]]*(max(0, K-idx)) + flo[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
-        mask = [masks_[0]]*(max(0, K-idx)) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
-        flow_masked = [f*m for f,m in zip(flow, mask)]
-        input_x = torch.cat(flow_masked, dim=1)
-        # initial holes
-        flow_pred = dfc_resnet(input_x)
-        res_complete = flow_pred * masks_[idx] + flow_pred * (1. - masks_[idx])
-        comp_flo.append(res_complete)
+        tmp_flo = [flo[0]]*(max(0, K-idx)) + flo[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
+        tmp_rflo = [rflo[0]]*(max(0, len(K-idx))) + rflo[max(0, idx-5):min(idx+5, length)] + [rflo[-1]]*(max(0, K+idx-length))
+        tmp_mask = [masks_[0]]*(max(0, K-idx)) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
+        mask_flo = [torch.cat([f,m], dim=1) for f,m in zip(tmp_flo, tmp_mask)]
+        mask_rflo = [torch.cat([f,m], dim=1) for f,m in zip(tmp_rflo, tmp_mask)]
+        # flo 
+        mask_flo = torch.cat(mask_flo, dim=1)
+        pred_flo = dfc_resnet(mask_flo)
+        comp_flo.append(pred_flo * masks_[idx] + pred_flo * (1. - masks_[idx]))
         # rflo
-        flow = [rflo[0]]*(max(0, len(K-idx))) + rflo[max(0, idx-5):min(idx+5, length)] + [rflo[-1]]*(max(0, K+idx-length))
-        mask = [masks_[0]]*(max(0, len(K-idx))) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
-        flow_masked = [f*m for f,m in zip(flow, mask)]
-        input_x = torch.cat(flow_masked, dim=1)
-        # initial holes
-        flow_pred = dfc_resnet(input_x)
-        res_complete = flow_pred * masks_[idx] + flow_pred * (1. - masks_[idx])
-        comp_rflo.append(res_complete)
+        mask_rflo = torch.cat(mask_rflo, dim=1)
+        pred_rflo = dfc_resnet(mask_rflo)
+        comp_flo.append(pred_rflo * masks_[idx] + pred_rflo * (1. - masks_[idx]))
       # # flow_guided_propagation
       # propagation(args, frame_inapint_model=deepfill_model)
 

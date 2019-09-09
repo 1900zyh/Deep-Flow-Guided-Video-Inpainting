@@ -45,14 +45,15 @@ class ZipReader(object):
     return im
 
 class dataset(data.Dataset):
-  def __init__(self, data_name, mask_type, size=(424, 240)):
+  def __init__(self, data_name, mask_type, flow_size=(448, 256), img_size=(424, 240)):
     with open(os.path.join('../flist', data_name, 'test.json'), 'r') as f:
       self.video_dict = json.load(f)
     self.videos = list(self.video_dict.keys())
     with open(os.path.join('../flist', data_name, 'mask.json'), 'r') as f:
       self.mask_dict = json.load(f)
     self.masks = list(self.mask_dict.keys())
-    self.size = size
+    self.flow_size = flow_size
+    self.img_size = img_size
     self.mask_type = mask_type
     self.data_name = data_name
 
@@ -76,13 +77,14 @@ class dataset(data.Dataset):
     
     for f, name in enumerate(frame_names):
       image_ = ZipReader.imread('../datazip/{}/JPEGImages/{}.zip'.format(self.data_name, video), name)
-      image_ = cv2.resize(np.array(image_), self.size, cv2.INTER_CUBIC)
-      image_ = torch.from_numpy(image_).permute(2,0,1).contiguous().float()
-      gts.append(image_)
+      image_ = cv2.resize(np.array(image_), self.img_size, cv2.INTER_CUBIC)
+      gts.append(torch.from_numpy(image_).permute(2,0,1).contiguous().float())
 
       mask_ = self._get_masks(index, video, f)
-      mask_ = torch.from_numpy(cv2.resize(mask_, self.size, cv2.INTER_NEAREST)).float()
-      masks.append(mask_)
+      mask_ = cv2.resize(mask_, self.img_size, cv2.INTER_NEAREST)
+      masks.append(torch.from_numpy(mask_).float())
+      mask_ = torch.from_numpy(cv2.resize(mask_, self.flow_size, cv2.INTER_NEAREST)).float()
+      image_ = torch.from_numpy(cv2.resize(image_, self.flow_size, cv2.INTER_CUBIC)).float()
       inps.append(image_ * (1.-mask_))
 
     return inps, masks, gts, info
