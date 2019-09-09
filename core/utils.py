@@ -10,7 +10,7 @@ from utils.flow import get_warp_label
 IMG_SIZE = (424, 240)
 w, h = IMG_SIZE
 th_warp=40
-
+DEFAULT_FPS = 6 
 
 def to_img(img):
   img = img.squeeze().cpu().data.numpy()
@@ -19,6 +19,12 @@ def to_img(img):
   return img 
 
 def propagation(deepfill, flo, rflo, images_, masks_, save_path):
+  # replicate for the last frame
+  flo.append(flo[-1].copy())
+  rflo.append(flo[-1].copy())
+  images_.append(images_[-1].copy())
+  masks_.append(masks_[-1].copy())
+  # propagate 
   masked_frame_num = len(masks_)
   frames_num = len(masks_)
   iter_num = 0
@@ -136,13 +142,13 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
     cv2.VideoWriter_fourcc(*"MJPG"), DEFAULT_FPS, IMG_SIZE)
   orig_writer = cv2.VideoWriter(os.path.join(save_path, 'orig.avi'),
     cv2.VideoWriter_fourcc(*"MJPG"), DEFAULT_FPS, IMG_SIZE)
-  for idx in range(frames_num):
-    orig = cv2.cvtColor(to_img(images_[idx]), cv2.COLOR_RGB2BGR)
-    m = to_img(masks_[idx])
-    pred = cv2.cvtColor(result_pool[idx], cv2.COLOR_RGB2BGR)
+  for idx in range(frames_num-1):
+    orig = np.array(cv2.cvtColor(to_img(images_[idx]), cv2.COLOR_RGB2BGR)).astype(np.uint8)
+    m = np.expand_dims(to_img(masks_[idx]), axis=2).astype(np.uint8)
+    pred = cv2.cvtColor(result_pool[idx], cv2.COLOR_RGB2BGR).astype(np.uint8)
     comp_writer.write(m*pred+(1-m)*orig)
     pred_writer.write(pred)
-    mask.writer.write((1-m)*orig+m*255)
+    mask_writer.write((1-m)*orig+m*255)
     orig_writer.write(orig)
   comp_writer.release()
   pred_writer.release()
