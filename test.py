@@ -13,6 +13,7 @@ import torch.nn.functional as F
 
 from models import resnet_models
 from models import FlowNet2
+from models import DeepFill
 from tools.frame_inpaint import DeepFillv1
 from core.dataset import dataset
 
@@ -163,7 +164,10 @@ def main_worker(gpu, ngpus_per_node):
   set_device(dfc_resnet)
   dfc_resnet.eval()
   # deepfill: used for image inpainting on unseen part
-  deepfill_model = DeepFillv1(pretrained_model=PRETRAINED_MODEL_inpaint, image_shape=FLOW_SIZE)
+  deepfill = set_device(DeepFill.Generator())
+  model_weight = torch.load(PRETRAINED_MODEL_inpaint, map_location = lambda storage, loc: set_device(storage))
+  deepfill.load_state_dict(model_weight)
+  deepfill.eval()
 
   # dataset 
   DTset = dataset(DATA_NAME, MASK_TYPE, flow_size=FLOW_SIZE, img_size=IMG_SIZE)
@@ -218,9 +222,9 @@ def main_worker(gpu, ngpus_per_node):
         # rflo
         mask_rflo = torch.cat(mask_rflo, dim=1)
         pred_rflo = dfc_resnet(mask_rflo)
-        comp_flo.append(pred_rflo * masks_[idx] + pred_rflo * (1. - masks_[idx]))
-      # # flow_guided_propagation
-      # propagation(args, frame_inapint_model=deepfill_model)
+        comp_rflo.append(pred_rflo * masks_[idx] + pred_rflo * (1. - masks_[idx]))
+      # flow_guided_propagation
+      propagation(comp_flo, comp_rflo, gts_*(1.-masks_), masks_)
 
 
 
