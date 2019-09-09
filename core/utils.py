@@ -37,7 +37,7 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
       label = to_img(masks_[0])
       image = to_img(images_[0])
     label = (label > 0).astype(np.uint8)
-    image[label > 0, :] = 0
+    image[(label > 0), :] = 0
     results[0][..., 0] = image
     time_stamp[0][label == 0, 0] = 0
     for th in range(1, frames_num):
@@ -106,31 +106,49 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
       result_pool[th] = result.copy()
       tmp_mask = np.zeros_like(result)
       tmp_mask[hole_v, :] = 255
-      label_pool[th] = tmp_mask.copy()
+      label_pool[th] = tmp_mask.copy()[:,:,0]
       tmp_label_seq[th] = np.sum(tmp_mask)
 
     frame_inpaint_seq[tmp_label_seq == 0] = 0
     masked_frame_num = np.sum((frame_inpaint_seq > 0).astype(np.int))
-    print(masked_frame_num)
     iter_num += 1
 
     if masked_frame_num > 0:
       key_frame_ids = get_key_ids(frame_inpaint_seq)
-      print(key_frame_ids)
       for idx in key_frame_ids:
         with torch.no_grad():
-          tmp_inpaint_res = deepfill.forward(result_pool[idx], label_pool[idx])
+          img, mask, small_mask  = data_preprocess(result_pool[idx], label_pool[idx])
+          img, mask, small_mask = set_device([img, mask, small_mask])
+          _, tmp_inpaint_res, _ = deepfill(img, mask, small_mask)
         label_pool[idx] = label_pool[idx] * 0.
-        result_pool[idx] = tmp_inpaint_res
-
+        result_pool[idx] = ((tmp_inpaint_res+1.0)*127.5).squeeze().cpu().data.numpy().transpose(1,2,0)
     tmp_label_seq = np.zeros(frames_num - 1)
     for th in range(0, frames_num - 1):
       tmp_label_seq[th] = np.sum(label_pool[th])
     frame_inpaint_seq[tmp_label_seq == 0] = 0
     masked_frame_num = np.sum((frame_inpaint_seq > 0).astype(np.int))
-    os.makedirs(save_path, exist_ok=True)
-    cv2.imwrite(os.path.join(save_path, 'test.jpg'), result_pool[0])
-    return result_pool
+  os.makedirs(save_path, exist_ok=True)
+  comp_writer = cv2.VideoWriter(os.path.join(save_path, 'comp.avi'),
+    cv2.VideoWriter_fourcc(*"MJPG"), DEFAULT_FPS, IMG_SIZE)
+  pred_writer = cv2.VideoWriter(os.path.join(save_path, 'pred.avi'),
+    cv2.VideoWriter_fourcc(*"MJPG"), DEFAULT_FPS, IMG_SIZE)
+  mask_writer = cv2.VideoWriter(os.path.join(save_path, 'mask.avi'),
+    cv2.VideoWriter_fourcc(*"MJPG"), DEFAULT_FPS, IMG_SIZE)
+  orig_writer = cv2.VideoWriter(os.path.join(save_path, 'orig.avi'),
+    cv2.VideoWriter_fourcc(*"MJPG"), DEFAULT_FPS, IMG_SIZE)
+  for idx in range(frames_num):
+    orig = cv2.cvtColor(to_img(images_[idx]), cv2.COLOR_RGB2BGR)
+    m = to_img(masks_[idx])
+    pred = cv2.cvtColor(result_pool[idx], cv2.COLOR_RGB2BGR)
+    comp_writer.write(m*pred+(1-m)*orig)
+    pred_writer.write(pred)
+    mask.writer.write((1-m)*orig+m*255)
+    orig_writer.write(orig)
+  comp_writer.release()
+  pred_writer.release()
+  mask_writer.release()
+  orig_writer.release()
+  return result_pool
     
 
 def get_key_ids(seq):
@@ -183,18 +201,12 @@ def data_preprocess(img, mask):
   img = img / 127.5 - 1
   mask = (mask > 0).astype(np.int)
   if len(mask.shape) == 3:
-    mask = mask[:, :, 0:1]
+    mask = mask[:,:,0:1]
   else:
     mask = np.expand_dims(mask, axis=2)
-  small_mask = cv2.resize(mask, (IMG_SIZE[1]//8, IMG_SIZE[0]//8), interpolation=cv2.INTER_NEAREST)
-  img = torch.from_numpy(img).permute(2, 0, 1).contiguous().float()
-  mask = torch.from_numpy(mask).permute(2, 0, 1).contiguous().float()
-  small_mask = torch.from_numpy(small_mask).permute(2, 0, 1).contiguous().float()
+  small_mask = cv2.resize(mask, (IMG_SIZE[0]//8, IMG_SIZE[1]//8), interpolation=cv2.INTER_NEAREST)
+  img = torch.from_numpy(img).permute(2,0,1).contiguous().float().unsqueeze(0)
+  mask = torch.from_numpy(mask).permute(2,0,1).contiguous().float().unsqueeze(0)
+  small_mask = torch.from_numpy(small_mask).contiguous().float().unsqueeze(0).unsqueeze(0)
   return img*(1-mask), mask, small_mask
 
-  # mask = mask.data.numpy()[0]
-  # res = res.cpu().data.numpy()[0]
-  # res_complete = res * mask + img * (1. - mask)
-  # res_complete = (res_complete + 1) * 127.5
-  # res_complete = res_complete.transpose(1, 2, 0)
-  # return res_complete

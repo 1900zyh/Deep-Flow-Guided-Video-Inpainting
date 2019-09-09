@@ -122,3 +122,4 @@ demo
 *.txt
 *.png
 __init__.py
+*.swp

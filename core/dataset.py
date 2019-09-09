@@ -93,7 +93,7 @@ class dataset(data.Dataset):
   def _get_masks(self, size, index, video, i):
     h, w = size
     if self.mask_type == 'fixed':
-      m = np.zeros(size, np.uint8)
+      m = np.zeros((h,w), np.uint8)
       m[h//2-h//8:h//2+h//8, w//2-w//8:w//2+w//8] = 1
       return m
     elif self.mask_type == 'object':
