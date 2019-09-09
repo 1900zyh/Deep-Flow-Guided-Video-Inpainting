@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import cv2
 import math
 import numpy as np 
 import random
@@ -16,6 +17,7 @@ from models import FlowNet2
 from models import DeepFill
 from tools.frame_inpaint import DeepFillv1
 from core.dataset import dataset
+from core.utils import set_device, get_clear_state_dict, propagation
 
 
 parser = argparse.ArgumentParser(description="deep-flow-guided")
@@ -48,104 +50,7 @@ MASK_TYPE = args.m
 K = 5
 IMG_SIZE = (424, 240)
 FLOW_SIZE = (448, 256)
-th_warp=40
 default_fps = 6
-
-
-def to_img(x):
-  tmp = (x[0,:,0,:,:].cpu().data.numpy().transpose((1,2,0))+1)/2
-  tmp = np.clip(tmp,0,1)*255.
-  return tmp.astype(np.uint8)
-
-
-# set parameter to gpu or cpu
-def set_device(args):
-  if torch.cuda.is_available():
-    if isinstance(args, list):
-      return (item.cuda() for item in args)
-    else:
-      return args.cuda()
-  return args
-
-def get_clear_state_dict(old_state_dict):
-  from collections import OrderedDict
-  new_state_dict = OrderedDict()
-  for k,v in old_state_dict.items():
-    name = k 
-    if k.startswith('module.'):
-      name = k[7:]
-    new_state_dict[name] = v
-  return new_state_dict
-
-
-def propagation(flo, rflo, images, masks):
-  while masked_frame_num > 0:
-    # forward
-    results = [np.zeros(image.shape + (2,), dtype=image.dtype) for _ in range(frames_num)]
-    time_stamp = [-np.ones(image.shape[:2] + (2,), dtype=int) for _ in range(frames_num)]
-    label = (label > 0).astype(np.uint8)
-    image[label > 0, :] = 0
-    results[0][..., 0] = image
-    time_stamp[0][label == 0, 0] = 0
-    for th in range(1, frames_num):
-      flow1 = flo[th]
-      flow2 = flo[th+1]
-      temp1 = flo.get_warp_label(flow1, flow2, results[th - 1][..., 0], th=th_warp)
-      temp2 = flo.get_warp_label(flow1, flow2, time_stamp[th - 1], th=th_warp, value=-1)[..., 0]
-      results[th][..., 0] = temp1
-      time_stamp[th][..., 0] = temp2
-      results[th][label == 0, :, 0] = image[label == 0, :]
-      time_stamp[th][label == 0, 0] = th
-
-    # backward
-    results[frames_num - 1][..., 1] = image
-    time_stamp[frames_num - 1][label == 0, 1] = frames_num - 1
-    for th in range(frames_num - 2, -1, -1):
-      flow1 = flo[th]
-      flow2 = flo[th+1]
-      temp1 = flo.get_warp_label(flow1, flow2, results[th + 1][..., 1], th=th_warp)
-      temp2 = flo.get_warp_label(flow1, flow2, time_stamp[th + 1], value=-1, th=th_warp,)[..., 1]
-      results[th][..., 1] = temp1
-      time_stamp[th][..., 1] = temp2
-      results[th][label == 0, :, 1] = image[label == 0, :]
-      time_stamp[th][label == 0, 1] = th
-
-    # merge
-    for th in range(0, frames_num - 1):
-      v1 = (time_stamp[th][..., 0] == -1)
-      v2 = (time_stamp[th][..., 1] == -1)
-      hole_v = (v1 & v2)
-      result = results[th][..., 0].copy()
-      result[v1, :] = results[th][v1, :, 1].copy()
-
-      v3 = ((v1 == 0) & (v2 == 0))
-      dist = time_stamp[th][..., 1] - time_stamp[th][..., 0]
-      dist[dist < 1] = 1
-
-      w2 = (th - time_stamp[th][..., 0]) / dist
-      w2 = (w2 > 0.5).astype(np.float)
-
-      result[v3, :] = (results[th][..., 1] * w2[..., np.newaxis] +
-                        results[th][..., 0] * (1 - w2)[..., np.newaxis])[v3, :]
-
-      result_pool[th] = result.copy()
-      tmp_mask = np.zeros_like(result)
-      tmp_mask[hole_v, :] = 255
-      label_pool[th] = tmp_mask.copy()
-      tmp_label_seq[th] = np.sum(tmp_mask)
-
-      sys.stdout.write('\n')
-      frame_inpaint_seq[tmp_label_seq == 0] = 0
-      masked_frame_num = np.sum((frame_inpaint_seq > 0).astype(np.int))
-      print(masked_frame_num)
-      iter_num += 1
-
-    # inpaint unseen part
-    with torch.no_grad():
-      tmp_inpaint_res = frame_inapint_model.forward(result_pool[id], label_pool[id])
-    label_pool[id] = label_pool[id] * 0.
-    result_pool[id] = tmp_inpaint_res
-    
 
 def main_worker(gpu, ngpus_per_node):
   if ngpus_per_node > 1:
@@ -224,7 +129,7 @@ def main_worker(gpu, ngpus_per_node):
         pred_rflo = dfc_resnet(mask_rflo)
         comp_rflo.append(pred_rflo * masks_[idx] + pred_rflo * (1. - masks_[idx]))
       # flow_guided_propagation
-      propagation(comp_flo, comp_rflo, gts_*(1.-masks_), masks_)
+      frames = propagation(deepfill, comp_flo, comp_rflo, gts_, masks_)
 
 
 
