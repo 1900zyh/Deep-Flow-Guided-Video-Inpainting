@@ -129,7 +129,7 @@ def main_worker(gpu, ngpus_per_node):
         pred_rflo = dfc_resnet(mask_rflo)
         comp_rflo.append(pred_rflo * masks_[idx] + pred_rflo * (1. - masks_[idx]))
       # flow_guided_propagation
-      frames = propagation(deepfill, comp_flo, comp_rflo, gts_, masks_)
+      frames = propagation(deepfill, comp_flo, comp_rflo, gts_, masks_, os.path.join(save_path, info_['vnames']))
 
 
 

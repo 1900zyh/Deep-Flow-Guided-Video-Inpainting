@@ -1,5 +1,6 @@
 
 import cv2
+import os
 import numpy as np
 import torch
 from collections import OrderedDict
@@ -17,7 +18,7 @@ def to_img(img):
     img = img.transpose(1,2,0)
   return img 
 
-def propagation(deepfill, flo, rflo, images_, masks_):
+def propagation(deepfill, flo, rflo, images_, masks_, save_path):
   masked_frame_num = len(masks_)
   frames_num = len(masks_)
   iter_num = 0
@@ -58,11 +59,25 @@ def propagation(deepfill, flo, rflo, images_, masks_):
       time_stamp[th][label == 0, 0] = th
 
     # backward
+    if iter_num == 0:
+      image = to_img(images_[frames_num-1])
+      label = to_img(masks_[frames_num-1])
+    else:
+      image = result_pool[-1]
+      label = label_pool[-1]
+    label = (label > 0).astype(np.uint8)
+    image[(label > 0), :] = 0
     results[frames_num - 1][..., 1] = image
     time_stamp[frames_num - 1][label == 0, 1] = frames_num - 1
     for th in range(frames_num - 2, -1, -1):
-      flow1 = flo[th][0].permute(1,2,0).data.cpu().numpy()
-      flow2 = flo[th+1][0].permute(1,2,0).data.cpu().numpy()
+      if iter_num == 0:
+        image = to_img(images_[th])
+        label = to_img(masks_[th])
+      else:
+        image = result_pool[th]
+        label = label_pool[th]
+      flow1 = flo[th+1][0].permute(1,2,0).data.cpu().numpy()
+      flow2 = flo[th][0].permute(1,2,0).data.cpu().numpy()
       temp1 = get_warp_label(flow1, flow2, results[th + 1][..., 1], th=th_warp)
       temp2 = get_warp_label(flow1, flow2, time_stamp[th + 1], value=-1, th=th_warp,)[..., 1]
       results[th][..., 1] = temp1
@@ -99,13 +114,52 @@ def propagation(deepfill, flo, rflo, images_, masks_):
     print(masked_frame_num)
     iter_num += 1
 
-    # inpaint unseen part
-    with torch.no_grad():
-      tmp_inpaint_res = deepfill.forward(result_pool[id], label_pool[id])
-    label_pool[id] = label_pool[id] * 0.
-    result_pool[id] = tmp_inpaint_res
+    if masked_frame_num > 0:
+      key_frame_ids = get_key_ids(frame_inpaint_seq)
+      print(key_frame_ids)
+      for idx in key_frame_ids:
+        with torch.no_grad():
+          tmp_inpaint_res = deepfill.forward(result_pool[idx], label_pool[idx])
+        label_pool[idx] = label_pool[idx] * 0.
+        result_pool[idx] = tmp_inpaint_res
+
+    tmp_label_seq = np.zeros(frames_num - 1)
+    for th in range(0, frames_num - 1):
+      tmp_label_seq[th] = np.sum(label_pool[th])
+    frame_inpaint_seq[tmp_label_seq == 0] = 0
+    masked_frame_num = np.sum((frame_inpaint_seq > 0).astype(np.int))
+    os.makedirs(save_path, exist_ok=True)
+    cv2.imwrite(os.path.join(save_path, 'test.jpg'), result_pool[0])
     return result_pool
     
+
+def get_key_ids(seq):
+  st_pointer = 0
+  end_pointer = len(seq) - 1
+  st_status = False
+  end_status = False
+  key_id_list = []
+
+  for i in range((len(seq)+1) // 2):
+    if st_pointer > end_pointer:
+      break
+    if not st_status and seq[st_pointer] > 0:
+      key_id_list.append(st_pointer)
+      st_status = not st_status
+    elif st_status and seq[st_pointer] <= 0:
+      key_id_list.append(st_pointer-1)
+      st_status = not st_status
+    if not end_status and seq[end_pointer] > 0:
+      key_id_list.append(end_pointer)
+      end_status = not end_status
+    elif end_status and seq[end_pointer] <= 0:
+      key_id_list.append(end_pointer+1)
+      end_status = not end_status
+
+    st_pointer += 1
+    end_pointer -= 1
+  return sorted(list(set(key_id_list)))
+
 
 # set parameter to gpu or cpu
 def set_device(args):
