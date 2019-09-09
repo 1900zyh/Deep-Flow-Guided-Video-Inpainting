@@ -13,17 +13,17 @@ th_warp=40
 DEFAULT_FPS = 6 
 
 def to_img(img):
-  img = img.squeeze().cpu().data.numpy()
+  img = img.squeeze().cpu().data.numpy().copy()
   if len(img.shape) == 3:
     img = img.transpose(1,2,0)
   return img 
 
 def propagation(deepfill, flo, rflo, images_, masks_, save_path):
   # replicate for the last frame
-  flo.append(flo[-1].copy())
-  rflo.append(flo[-1].copy())
-  images_.append(images_[-1].copy())
-  masks_.append(masks_[-1].copy())
+  flo.append(flo[-1])
+  rflo.append(rflo[-1])
+  images_.append(images_[-1])
+  masks_.append(masks_[-1])
   # propagate 
   masked_frame_num = len(masks_)
   frames_num = len(masks_)
@@ -146,10 +146,10 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
     orig = np.array(cv2.cvtColor(to_img(images_[idx]), cv2.COLOR_RGB2BGR)).astype(np.uint8)
     m = np.expand_dims(to_img(masks_[idx]), axis=2).astype(np.uint8)
     pred = cv2.cvtColor(result_pool[idx], cv2.COLOR_RGB2BGR).astype(np.uint8)
+    orig_writer.write(orig)
     comp_writer.write(m*pred+(1-m)*orig)
     pred_writer.write(pred)
     mask_writer.write((1-m)*orig+m*255)
-    orig_writer.write(orig)
   comp_writer.release()
   pred_writer.release()
   mask_writer.release()

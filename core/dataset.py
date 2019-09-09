@@ -78,7 +78,7 @@ class dataset(data.Dataset):
     for f, name in enumerate(frame_names):
       image_ = ZipReader.imread('../datazip/{}/JPEGImages/{}.zip'.format(self.data_name, video), name)
       image_ = cv2.resize(np.array(image_), self.img_size, cv2.INTER_CUBIC)
-      gts.append(torch.from_numpy(image_).permute(2,0,1).contiguous().float())
+      gts.append(torch.from_numpy(np.array(image_)).permute(2,0,1).contiguous().float())
 
       mask_ = self._get_masks(self.img_size, index, video, f)
       mask_ = cv2.resize(mask_, self.img_size, cv2.INTER_NEAREST)
