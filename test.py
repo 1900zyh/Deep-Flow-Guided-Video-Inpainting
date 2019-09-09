@@ -7,6 +7,7 @@ import random
 import datetime
 import cvbase as cvb
 import torch
+import torch.nn as nn
 import torch.multiprocessing as mp
 import torch.nn.functional as F
 
@@ -29,8 +30,8 @@ PRETRAINED_MODEL_flownet2 = './pretrained_models/FlowNet2_checkpoint.pth.tar'
 PRETRAINED_MODEL_inpaint = './pretrained_models/imagenet_deepfill.pth'
 PRETRAINED_MODEL_dfc ='./pretrained_models/resnet50_stage1.pth'
 flow_args = Object() 
+flow_args.fp16 = False
 flow_args.rgb_max = 255.
-flow_args.fp16 = True
 # set random seed 
 seed = 2020
 torch.manual_seed(seed)
@@ -182,30 +183,30 @@ def main_worker(gpu, ngpus_per_node):
       flo = []
       rflo = []
       for idx in range(length):
-        id1, id2, id3 = max(0, idx), idx, min(idx, length-1)
+        id1, id2, id3 = max(0, idx-1), idx, min(idx+1, length-1)
         if id2 < id3:
           f2, f3 = set_device([frames_[id2], frames_[id3]])
-          f = FlowNet2(f2, f3)
-          f = F.interpolate(f, IMG_SIZE)
-          f[0,0,...] = f[0,0,...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
-          f[0,1,...] = f[0,1,...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f = Flownet(f2, f3)
+          f = nn.Upsample(size=list(IMG_SIZE)[::-1], mode='bilinear', align_corners=True)(f)
+          f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
+          f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           flo.append(f)
         if id1 < id2:
           f1, f2 = set_device([frames_[id1], frames_[id2]])
-          f = FlowNet2(f1, f2)
-          f = F.interpolate(f, IMG_SIZE)
-          f[0,0,...] = f[0,0,...].clip(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
-          f[0,1,...] = f[0,1,...].clip(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f = Flownet(f1, f2)
+          f = nn.Upsample(size=list(IMG_SIZE)[::-1], mode='bilinear', align_corners=True)(f)
+          f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
+          f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           rflo.append(f)
-      flo.append(f*0)
-      rflo.insert(0, f*0)
+      flo.append(flo[-1]*0)
+      rflo.insert(0, rflo[0]*0)
       # flow completion 
       comp_flo = []
       comp_rflo = []
       for idx in range(length):
         # flo
-        flow = [flo[0]]*(max(0, len(K-idx))) + flo[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
-        mask = [masks_[0]]*(max(0, len(K-idx))) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
+        flow = [flo[0]]*(max(0, K-idx)) + flo[max(0, idx-5):min(idx+5, length)] + [flo[-1]]*(max(0, K+idx-length))
+        mask = [masks_[0]]*(max(0, K-idx)) + masks_[max(0, idx-5):min(idx+5, length)] + [masks_[-1]]*(max(0, K+idx-length))
         flow_masked = [f*m for f,m in zip(flow, mask)]
         input_x = torch.cat(flow_masked, dim=1)
         # initial holes
