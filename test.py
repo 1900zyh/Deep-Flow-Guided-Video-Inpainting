@@ -108,8 +108,8 @@ def main_worker(gpu, ngpus_per_node):
           f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
           rflo.append(f)
-      flo.append(flo[-1]*0)
-      rflo.insert(0, rflo[0]*0)
+      flo.append(flo[-1].clone()*0)
+      rflo.insert(0, rflo[0].clone()*0)
       # flow completion 
       comp_flo = []
       comp_rflo = []
@@ -118,8 +118,8 @@ def main_worker(gpu, ngpus_per_node):
         tmp_flo = [flo[0]]*(max(0, K-idx)) + flo[max(0, idx-K):min(idx+K+1, length)] + [flo[-1]]*(max(0, K+idx+1-length))
         tmp_rflo = [rflo[0]]*(max(0, K-idx)) + rflo[max(0, idx-K):min(idx+K+1, length)] + [rflo[-1]]*(max(0, K+idx+1-length))
         tmp_mask = [masks_[0]]*(max(0, K-idx)) + masks_[max(0, idx-K):min(idx+K+1, length)] + [masks_[-1]]*(max(0, K+idx+1-length))
-        mask_flo = [torch.cat([f,m], dim=1) for f,m in zip(tmp_flo, tmp_mask)]
-        mask_rflo = [torch.cat([f,m], dim=1) for f,m in zip(tmp_rflo, tmp_mask)]
+        mask_flo = [torch.cat([f*(1-m),m], dim=1) for f,m in zip(tmp_flo, tmp_mask)]
+        mask_rflo =[torch.cat([f*(1-m),m], dim=1) for f,m in zip(tmp_rflo, tmp_mask)]
         # flo 
         mask_flo = torch.cat(mask_flo, dim=1)
         pred_flo = dfc_resnet(mask_flo)
