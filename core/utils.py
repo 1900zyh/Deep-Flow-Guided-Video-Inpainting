@@ -20,10 +20,10 @@ def to_img(img):
 
 def propagation(deepfill, flo, rflo, images_, masks_, save_path):
   # replicate for the last frame
-  flo.append(flo[-1])
-  rflo.append(rflo[-1])
-  images_.append(images_[-1])
-  masks_.append(masks_[-1])
+  flo.append(flo[-1].copy())
+  rflo.append(rflo[-1].copy())
+  images_.append([images_[-1].copy()])
+  masks_.append([masks_[-1].copy()])
   # propagate 
   masked_frame_num = len(masks_)
   frames_num = len(masks_)
@@ -47,12 +47,12 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
     results[0][..., 0] = image
     time_stamp[0][label == 0, 0] = 0
     for th in range(1, frames_num):
-      if iter_num == 0:
-        image = to_img(images_[th])
-        label = to_img(masks_[th])
-      else:
+      if iter_num != 0:
         image = result_pool[th]
         label = label_pool[th]
+      else:
+        image = to_img(images_[th])
+        label = to_img(masks_[th])
       flow1 = flo[th-1][0].permute(1,2,0).data.cpu().numpy()
       flow2 = flo[th][0].permute(1,2,0).data.cpu().numpy()
       label = (label>0).astype(np.uint8)
@@ -65,23 +65,23 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
       time_stamp[th][label == 0, 0] = th
 
     # backward
-    if iter_num == 0:
-      image = to_img(images_[frames_num-1])
-      label = to_img(masks_[frames_num-1])
-    else:
+    if iter_num != 0:
       image = result_pool[-1]
       label = label_pool[-1]
+    else:
+      image = to_img(images_[frames_num-1])
+      label = to_img(masks_[frames_num-1])
     label = (label > 0).astype(np.uint8)
     image[(label > 0), :] = 0
     results[frames_num - 1][..., 1] = image
     time_stamp[frames_num - 1][label == 0, 1] = frames_num - 1
     for th in range(frames_num - 2, -1, -1):
-      if iter_num == 0:
-        image = to_img(images_[th])
-        label = to_img(masks_[th])
-      else:
+      if iter_num != 0:
         image = result_pool[th]
         label = label_pool[th]
+      else:
+        image = to_img(images_[th])
+        label = to_img(masks_[th])
       flow1 = flo[th+1][0].permute(1,2,0).data.cpu().numpy()
       flow2 = flo[th][0].permute(1,2,0).data.cpu().numpy()
       temp1 = get_warp_label(flow1, flow2, results[th + 1][..., 1], th=th_warp)
