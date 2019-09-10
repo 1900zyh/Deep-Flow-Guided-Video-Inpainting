@@ -86,7 +86,9 @@ class dataset(data.Dataset):
       mask_ = torch.from_numpy(cv2.resize(mask_, self.flow_size, cv2.INTER_NEAREST)).float()
       image_ = torch.from_numpy(cv2.resize(image_, self.flow_size, cv2.INTER_CUBIC)).permute(2,0,1).contiguous().float()
       inps.append(image_)
-
+    gts.append(gts[-1].clone())
+    inps.append(inps[-1].clone())
+    masks.append(masks[-1].clone())
     return inps, masks, gts, info
 
 

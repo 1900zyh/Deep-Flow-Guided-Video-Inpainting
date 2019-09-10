@@ -33,7 +33,7 @@ class Object():
 
 PRETRAINED_MODEL_flownet2 = './pretrained_models/FlowNet2_checkpoint.pth.tar'
 PRETRAINED_MODEL_inpaint = './pretrained_models/imagenet_deepfill.pth'
-PRETRAINED_MODEL_dfc ='./pretrained_models/resnet50_stage1.pth'
+PRETRAINED_MODEL_dfc ='./pretrained_models/resnet101_movie.pth'
 flow_args = Object() 
 flow_args.fp16 = False
 flow_args.rgb_max = 255.
@@ -66,7 +66,7 @@ def main_worker(gpu, ngpus_per_node):
   set_device(Flownet)
   Flownet.eval()
   # dfc_resnet: used for completing optical_flow
-  dfc_resnet = resnet_models.Flow_Branch_Multi(input_chanels=33, NoLabels=2)
+  dfc_resnet = resnet_models.Flow_Branch(33,2)#_Multi(input_chanels=33, NoLabels=2)
   ckpt_dict = torch.load(PRETRAINED_MODEL_dfc, map_location = lambda storage, loc: set_device(storage))
   dfc_resnet.load_state_dict(get_clear_state_dict(ckpt_dict['model']))
   set_device(dfc_resnet)
@@ -111,7 +111,6 @@ def main_worker(gpu, ngpus_per_node):
           f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
           rflo.append(f)
-      #flo.append(flo[-1].clone()*0)
       rflo.insert(0, rflo[0].clone()*0)
       # flow completion 
       comp_flo = []
