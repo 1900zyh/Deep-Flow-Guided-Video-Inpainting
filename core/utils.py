@@ -20,10 +20,10 @@ def to_img(img):
 
 def propagation(deepfill, flo, rflo, images_, masks_, save_path):
   # replicate for the last frame
-  flo.append(flo[-1].clone())
-  rflo.append(rflo[-1].clone())
-  images_.append(images_[-1].clone())
-  masks_.append(masks_[-1].clone())
+  #flo.append(flo[-1].clone())
+  #rflo.append(rflo[-1].clone())
+  #images_.append(images_[-1].clone())
+  #masks_.append(masks_[-1].clone())
   # propagate 
   masked_frame_num = len(masks_)
   frames_num = len(masks_)
@@ -54,7 +54,7 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
         image = to_img(images_[th])
         label = to_img(masks_[th])
       flow1 = flo[th-1][0].permute(1,2,0).data.cpu().numpy()
-      flow2 = flo[th][0].permute(1,2,0).data.cpu().numpy()
+      flow2 = rflo[th][0].permute(1,2,0).data.cpu().numpy()
       label = (label>0).astype(np.uint8)
       image[(label>0), :] = 0
       temp1 = get_warp_label(flow1, flow2, results[th - 1][..., 0], th=th_warp)
@@ -82,7 +82,7 @@ def propagation(deepfill, flo, rflo, images_, masks_, save_path):
       else:
         image = to_img(images_[th])
         label = to_img(masks_[th])
-      flow1 = flo[th+1][0].permute(1,2,0).data.cpu().numpy()
+      flow1 = rflo[th+1][0].permute(1,2,0).data.cpu().numpy()
       flow2 = flo[th][0].permute(1,2,0).data.cpu().numpy()
       temp1 = get_warp_label(flow1, flow2, results[th + 1][..., 1], th=th_warp)
       temp2 = get_warp_label(flow1, flow2, time_stamp[th + 1], value=-1, th=th_warp,)[..., 1]
