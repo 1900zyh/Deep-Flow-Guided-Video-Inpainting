@@ -20,10 +20,10 @@ def to_img(img):
 
 def propagation(deepfill, flo, rflo, images_, masks_, save_path):
   # replicate for the last frame
-  flo.append(flo[-1].copy())
-  rflo.append(rflo[-1].copy())
-  images_.append([images_[-1].copy()])
-  masks_.append([masks_[-1].copy()])
+  flo.append(flo[-1].clone())
+  rflo.append(rflo[-1].clone())
+  images_.append(images_[-1].clone())
+  masks_.append(masks_[-1].clone())
   # propagate 
   masked_frame_num = len(masks_)
   frames_num = len(masks_)

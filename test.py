@@ -88,8 +88,8 @@ def main_worker(gpu, ngpus_per_node):
       length = len(frames_)
       masks_ = list(set_device(list(masks_)))
       # extracting flow
-      print('[{}] {}/{}: {} for {} frames ...'.format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-        seq, len(Trainloader), info_['vnames'], length))
+      print('[{}] GPU-{}: {}/{} {} for {} frames ...'.format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+        gpu, seq, len(Trainloader), info_['vnames'], length))
       flo = []
       rflo = []
       for idx in range(length):
@@ -98,15 +98,15 @@ def main_worker(gpu, ngpus_per_node):
           f2, f3 = set_device([frames_[id2], frames_[id3]])
           f = Flownet(f2, f3)
           f = nn.Upsample(size=list(IMG_SIZE)[::-1], mode='bilinear', align_corners=True)(f)
-          f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
-          f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
           flo.append(f)
         if id1 < id2:
           f1, f2 = set_device([frames_[id1], frames_[id2]])
           f = Flownet(f1, f2)
           f = nn.Upsample(size=list(IMG_SIZE)[::-1], mode='bilinear', align_corners=True)(f)
-          f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
-          f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
+          f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
           rflo.append(f)
       flo.append(flo[-1]*0)
       rflo.insert(0, rflo[0]*0)
