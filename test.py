@@ -49,6 +49,7 @@ DATA_NAME = args.n
 MASK_TYPE = args.m
 K = 5
 IMG_SIZE = (424, 240)
+imgw, imgh = IMG_SIZE
 FLOW_SIZE = (448, 256)
 default_fps = 6
 
@@ -97,14 +98,14 @@ def main_worker(gpu, ngpus_per_node):
         if id2 < id3:
           f2, f3 = set_device([frames_[id2], frames_[id3]])
           f = Flownet(f2, f3)
-          f = nn.Upsample(size=list(IMG_SIZE)[::-1], mode='bilinear', align_corners=True)(f)
+          f = nn.Upsample(size=(1,2,imgh,imgw), mode='bilinear', align_corners=True)(f)
           f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
           flo.append(f)
         if id1 < id2:
           f1, f2 = set_device([frames_[id1], frames_[id2]])
-          f = Flownet(f1, f2)
-          f = nn.Upsample(size=list(IMG_SIZE)[::-1], mode='bilinear', align_corners=True)(f)
+          f = Flownet(f2, f1)
+          f = nn.Upsample(size=(1,2,imgh,imgw), mode='bilinear', align_corners=True)(f)
           f[0,0,...] = f[0,0,...].clamp(-1. * FLOW_SIZE[0], FLOW_SIZE[0]) / FLOW_SIZE[0] * IMG_SIZE[0]
           f[0,1,...] = f[0,1,...].clamp(-1. * FLOW_SIZE[1], FLOW_SIZE[1]) / FLOW_SIZE[1] * IMG_SIZE[1]
           rflo.append(f)
@@ -123,11 +124,11 @@ def main_worker(gpu, ngpus_per_node):
         # flo 
         mask_flo = torch.cat(mask_flo, dim=1)
         pred_flo = dfc_resnet(mask_flo)
-        comp_flo.append(pred_flo * masks_[idx] + pred_flo * (1. - masks_[idx]))
+        comp_flo.append(pred_flo * masks_[idx] + mask_flo * (1. - masks_[idx]))
         # rflo
         mask_rflo = torch.cat(mask_rflo, dim=1)
         pred_rflo = dfc_resnet(mask_rflo)
-        comp_rflo.append(pred_rflo * masks_[idx] + pred_rflo * (1. - masks_[idx]))
+        comp_rflo.append(pred_rflo * masks_[idx] + mask_rflo * (1. - masks_[idx]))
       # flow_guided_propagation
       frames = propagation(deepfill, comp_flo, comp_rflo, gts_, masks_, os.path.join(save_path, info_['vnames'][0]))
 
