@@ -65,8 +65,10 @@ deepfill.eval()
 if __name__ == '__main__':
   # loading flows
   flo_path = 'demo/flamingo/Flow_res/initial_res/'
-  flo_list = glob.glob(os.path.join(flo_path, '*.flo')).sort()
-  rflo_list = glob.glob(os.path.join(flo_path, '*.rflo')).sort()
+  flo_list = glob.glob(os.path.join(flo_path, '*.flo'))
+  flo_list.sort()
+  rflo_list = glob.glob(os.path.join(flo_path, '*.rflo'))
+  rflo_list.sort()
   comp_flo = []
   for i, n in enumerate(flo_list):
     flow = cvb.read_flow(n)
@@ -86,19 +88,24 @@ if __name__ == '__main__':
     flow = torch.from_numpy(flow).permute(2, 0, 1).contiguous().float().unsqueeze(0)
     comp_rflo.append(flow)
   
-  img_list = glob.glob(os.path.join('demo/flamingo/frames', '*.jpg')).sort()
-  mask_list = glob.glob(os.path.join('demo/flamingo/frames', '*.png')).sort()
+  img_list = glob.glob(os.path.join('demo/flamingo/frames', '*.jpg'))
+  img_list.sort()
+  mask_list = glob.glob(os.path.join('demo/flamingo/masks', '*.png'))
+  mask_list.sort()
   gts_ = []
-  for i, n in img_list:
+  for i, n in enumerate(img_list):
     image_ = cv2.imread(n)[:,:,::-1]
     image_ = cv2.resize(np.array(image_), IMG_SIZE, cv2.INTER_CUBIC)
     gts_.append(torch.from_numpy(np.array(image_)).permute(2,0,1).contiguous().float().unsqueeze(0))
   masks_ = []
-  for i, n in mask_list:
-    m = cv2.imread(n)
+  for i, n in enumerate(mask_list):
+    m = cv2.imread(n)[:,:,2]
+    m = np.array(m>0).astype(np.uint8)
     m = cv2.resize(np.array(m), IMG_SIZE, cv2.INTER_NEAREST)
     m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_CROSS,(3,3)), iterations=4).astype(np.float32)
-    masks_.append(torch.from_numpy(np.array(m)).permute(2,0,1).contiguous().float().unsqueeze(0))
+    masks_.append(torch.from_numpy(np.array(m)).contiguous().float().unsqueeze(0))
+  print(len(comp_flo), len(comp_rflo), len(gts_), len(masks_))
+  print('begin propagation')
   propagation(deepfill, comp_flo, comp_rflo, gts_, masks_, 'flamingo')
 
 
