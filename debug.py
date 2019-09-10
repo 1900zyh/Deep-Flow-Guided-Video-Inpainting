@@ -18,6 +18,7 @@ from models import DeepFill
 from tools.frame_inpaint import DeepFillv1
 from core.dataset import dataset
 from core.utils import set_device, get_clear_state_dict, propagation
+import glob
 
 
 parser = argparse.ArgumentParser(description="deep-flow-guided")
@@ -53,23 +54,52 @@ imgw, imgh = IMG_SIZE
 FLOW_SIZE = (448, 256)
 default_fps = 6
 
-def main_worker(gpu, ngpus_per_node):
-        comp_rflo.append(pred_rflo * masks_[idx] + tmp_rflo[K] * (1. - masks_[idx]))
-      # flow_guided_propagation
-      frames = propagation(deepfill, comp_flo, comp_rflo, gts_, masks_, os.path.join(save_path, info_['vnames'][0]))
 
-
+# deepfill: used for image inpainting on unseen part
+deepfill = set_device(DeepFill.Generator())
+model_weight = torch.load(PRETRAINED_MODEL_inpaint, map_location = lambda storage, loc: set_device(storage))
+deepfill.load_state_dict(model_weight)
+deepfill.eval()
 
 
 if __name__ == '__main__':
-  ngpus_per_node = torch.cuda.device_count()
-  print('Using {} GPUs for testing {}_{}... '.format(ngpus_per_node, DATA_NAME, MASK_TYPE))
-  processes = []
-  mp.set_start_method('spawn', force=True)
-  for rank in range(ngpus_per_node):
-    p = mp.Process(target=main_worker, args=(rank, ngpus_per_node))
-    p.start()
-    processes.append(p)
-  for p in processes:
-    p.join()
-  print('Finished testing for {}_{}'.format(DATA_NAME, MASK_TYPE))
+  # loading flows
+  flo_path = 'demo/flamingo/Flow_res/initial_res/'
+  flo_list = glob.glob(os.path.join(flo_path, '*.flo')).sort()
+  rflo_list = glob.glob(os.path.join(flo_path, '*.rflo')).sort()
+  comp_flo = []
+  for i, n in enumerate(flo_list):
+    flow = cvb.read_flow(n)
+    origin_shape = flow.shape
+    flow = cv2.resize(flow, (IMG_SIZE))
+    flow[:, :, 0] = flow[:, :, 0].clip(-1. * origin_shape[1], origin_shape[1]) / origin_shape[1] * IMG_SIZE[0]
+    flow[:, :, 1] = flow[:, :, 1].clip(-1. * origin_shape[0], origin_shape[0]) / origin_shape[0] * IMG_SIZE[1]
+    flow = torch.from_numpy(flow).permute(2, 0, 1).contiguous().float().unsqueeze(0)
+    comp_flo.append(flow)
+  comp_rflo = []
+  for i, n in enumerate(rflo_list):
+    flow = cvb.read_flow(n)
+    origin_shape = flow.shape
+    flow = cv2.resize(flow, (IMG_SIZE))
+    flow[:, :, 0] = flow[:, :, 0].clip(-1. * origin_shape[1], origin_shape[1]) / origin_shape[1] * IMG_SIZE[0]
+    flow[:, :, 1] = flow[:, :, 1].clip(-1. * origin_shape[0], origin_shape[0]) / origin_shape[0] * IMG_SIZE[1]
+    flow = torch.from_numpy(flow).permute(2, 0, 1).contiguous().float().unsqueeze(0)
+    comp_rflo.append(flow)
+  
+  img_list = glob.glob(os.path.join('demo/flamingo/frames', '*.jpg')).sort()
+  mask_list = glob.glob(os.path.join('demo/flamingo/frames', '*.png')).sort()
+  gts_ = []
+  for i, n in img_list:
+    image_ = cv2.imread(n)[:,:,::-1]
+    image_ = cv2.resize(np.array(image_), IMG_SIZE, cv2.INTER_CUBIC)
+    gts_.append(torch.from_numpy(np.array(image_)).permute(2,0,1).contiguous().float().unsqueeze(0))
+  masks_ = []
+  for i, n in mask_list:
+    m = cv2.imread(n)
+    m = cv2.resize(np.array(m), IMG_SIZE, cv2.INTER_NEAREST)
+    m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_CROSS,(3,3)), iterations=4).astype(np.float32)
+    masks_.append(torch.from_numpy(np.array(m)).permute(2,0,1).contiguous().float().unsqueeze(0))
+  propagation(deepfill, comp_flo, comp_rflo, gts_, masks_, 'flamingo')
+
+
+
