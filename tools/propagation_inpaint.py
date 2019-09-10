@@ -63,7 +63,7 @@ def propagation(args, frame_inapint_model=None):
     if not os.path.exists(output_root):
         os.makedirs(output_root)
 
-    frame_name_list = sorted(os.listdir(img_root))
+    frame_name_list = sorted([f for f in os.listdir(img_root) if f.endswith('.jpg')])
     frames_num = len(frame_name_list)
     frame_inpaint_seq = np.ones(frames_num-1)
     masked_frame_num = np.sum((frame_inpaint_seq > 0).astype(np.int))
