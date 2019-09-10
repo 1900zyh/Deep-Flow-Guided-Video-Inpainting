@@ -12,6 +12,8 @@ import torch.nn as nn
 import torch.multiprocessing as mp
 import torch.nn.functional as F
 
+from utils import region_fill as rf
+
 from models import resnet_models
 from models import FlowNet2
 from models import DeepFill
@@ -119,14 +121,25 @@ def main_worker(gpu, ngpus_per_node):
         tmp_flo = [flo[0]]*(max(0, K-idx)) + flo[max(0, idx-K):min(idx+K+1, length)] + [flo[-1]]*(max(0, K+idx+1-length+1))
         tmp_rflo = [rflo[0]]*(max(0, K-idx)) + rflo[max(0, idx-K):min(idx+K+1, length)] + [rflo[-1]]*(max(0, K+idx+1-length))
         tmp_mask = [masks_[0]]*(max(0, K-idx)) + masks_[max(0, idx-K):min(idx+K+1, length)] + [masks_[-1]]*(max(0, K+idx+1-length))
-        mask_flo = [torch.cat([f*(1-m),m], dim=1) for f,m in zip(tmp_flo, tmp_mask)]
-        mask_rflo =[torch.cat([f*(1-m),m], dim=1) for f,m in zip(tmp_rflo, tmp_mask)]
+        # initial holes
+        for fi in range(len(tmp_flo)):
+          np_mask = tmp_mask[fi].squeeze().cpu().data.numpy()
+          np_flo = tmp_flo[fi].permute(1,2,0).data.cpu().numpy() * (1.-np_mask)
+          np_flo[:, :, 0] = np_flo[:, :, 0] + np_mask * rf.regionfill(np_flo[:, :, 0], np_mask)
+          np_flo[:, :, 1] = np_flo[:, :, 1] + np_mask * rf.regionfill(np_flo[:, :, 1], np_mask)
+          tmp_flo[fi] = torch.from_numpy(np_flo).permute(2, 0, 1).contiguous().float().unsqueeze(0)
+          np_rflo = tmp_rflo[fi].permute(1,2,0).data.cpu().numpy() * (1.-np_mask)
+          np_rflo[:, :, 0] = np_rflo[:, :, 0] + np_mask * rf.regionfill(np_rflo[:, :, 0], np_mask)
+          np_rflo[:, :, 1] = np_rflo[:, :, 1] + np_mask * rf.regionfill(np_rflo[:, :, 1], np_mask)
+          tmp_rflo[fi] = torch.from_numpy(np_rflo).permute(2, 0, 1).contiguous().float().unsqueeze(0)
+        mask_flo = [torch.cat([f,m], dim=1) for f,m in zip(tmp_flo, tmp_mask)]
+        mask_rflo =[torch.cat([f,m], dim=1) for f,m in zip(tmp_rflo, tmp_mask)]
         # flo 
-        mask_flo = torch.cat(mask_flo, dim=1)
+        mask_flo = set_device(torch.cat(mask_flo, dim=1))
         pred_flo = dfc_resnet(mask_flo)
         comp_flo.append(pred_flo * masks_[idx] + tmp_flo[K] * (1. - masks_[idx]))
         # rflo
-        mask_rflo = torch.cat(mask_rflo, dim=1)
+        mask_rflo = set_device(torch.cat(mask_rflo, dim=1))
         pred_rflo = dfc_resnet(mask_rflo)
         comp_rflo.append(pred_rflo * masks_[idx] + tmp_rflo[K] * (1. - masks_[idx]))
       # flow_guided_propagation
