@@ -21,6 +21,8 @@ from scipy import ndimage, signal
 import pdb
 import zipfile
 
+from core.utils import get_video_masks_by_moving_random_stroke
+
 
 class ZipReader(object):
   file_dict = dict()
@@ -53,7 +55,7 @@ class dataset(data.Dataset):
       self.mask_dict = json.load(f)
     self.masks = list(self.mask_dict.keys())
     self.flow_size = flow_size
-    self.img_size = img_size
+    self.img_size = self.w, self.h = img_size
     self.mask_type = mask_type
     self.data_name = data_name
 
@@ -80,12 +82,15 @@ class dataset(data.Dataset):
       image_ = cv2.resize(np.array(image_), self.img_size, cv2.INTER_CUBIC)
       gts.append(torch.from_numpy(np.array(image_)).permute(2,0,1).contiguous().float())
 
-      mask_ = self._get_masks(self.img_size, index, video, f)
-      mask_ = cv2.resize(mask_, self.img_size, cv2.INTER_NEAREST)
-      masks.append(torch.from_numpy(mask_).float().unsqueeze(0))
-      mask_ = torch.from_numpy(cv2.resize(mask_, self.flow_size, cv2.INTER_NEAREST)).float()
+      if self.mask_type != 'random_obj':
+        mask_ = self._get_masks(self.img_size, index, video, f)
+        mask_ = cv2.resize(mask_, self.img_size, cv2.INTER_NEAREST)
+        masks.append(torch.from_numpy(mask_).float().unsqueeze(0))
       image_ = torch.from_numpy(cv2.resize(image_, self.flow_size, cv2.INTER_CUBIC)).permute(2,0,1).contiguous().float()
       inps.append(image_)
+    if self.mask_type == 'random_obj':
+      masks = [torch.from_numpy(np.array(m).astype(np.uint8)) for m in get_video_masks_by_moving_random_stroke(len(frame_names), imageWidth=self.w, imageHeight=self.h)]
+
     gts.append(gts[-1].clone())
     inps.append(inps[-1].clone())
     masks.append(masks[-1].clone())

@@ -27,7 +27,6 @@ from core.transform import (
 )
 
 parser = argparse.ArgumentParser(description='PyTorch Template')
-parser.add_argument('-c', '--config', default='configs/iccv19-vos-fixed.json', type=str)
 parser.add_argument('-r', '--resume', default=None, type=str)
 args = parser.parse_args()
 
@@ -56,7 +55,7 @@ def main():
   orig_videos = []
   comp_videos = []
   # metrics prepare for image assesments
-  metrics = {met: getattr(module_metric, met) for met in ['mse', 'psnr', 'ssim']}
+  metrics = {met: getattr(module_metric, met) for met in ['mae', 'psnr', 'ssim']}
   evaluation_scores = {key: 0 for key,val in metrics.items()}
   # infer through videos
   for vi, (orig_vname, comp_vname) in enumerate(zip(orig_names, comp_names)):
