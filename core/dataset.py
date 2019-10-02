@@ -89,7 +89,7 @@ class dataset(data.Dataset):
       image_ = torch.from_numpy(cv2.resize(image_, self.flow_size, cv2.INTER_CUBIC)).permute(2,0,1).contiguous().float()
       inps.append(image_)
     if self.mask_type == 'random_obj':
-      masks = [torch.from_numpy(np.array(m).astype(np.uint8)) for m in get_video_masks_by_moving_random_stroke(len(frame_names), imageWidth=self.w, imageHeight=self.h)]
+      masks = [torch.from_numpy(np.array(m).astype(np.uint8)).float().unsqueeze(0) for m in get_video_masks_by_moving_random_stroke(len(frame_names), imageWidth=self.w, imageHeight=self.h)]
 
     gts.append(gts[-1].clone())
     inps.append(inps[-1].clone())
