@@ -9,7 +9,7 @@ from utils.flow import get_warp_label
 from PIL import Image, ImageOps, ImageDraw,ImageFilter
 
 
-IMG_SIZE = (424, 240)
+IMG_SIZE = (432, 240)
 w, h = IMG_SIZE
 th_warp=40
 DEFAULT_FPS = 6 
@@ -216,7 +216,7 @@ def data_preprocess(img, mask):
 
 
 def get_video_masks_by_moving_random_stroke(
-    video_len, imageWidth=424, imageHeight=240, nStroke=3,
+    video_len, imageWidth=432, imageHeight=240, nStroke=3,
     nVertexBound=[5, 20], maxHeadSpeed=15, maxHeadAcceleration=(15, 3.14),
     brushWidthBound=(30, 50), boarderGap=50, nMovePointRatio=0.5, maxPiontMove=10,
     maxLineAcceleration=(5,0.5), maxInitSpeed=10
