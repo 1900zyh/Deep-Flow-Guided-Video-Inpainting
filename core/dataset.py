@@ -47,7 +47,7 @@ class ZipReader(object):
     return im
 
 class dataset(data.Dataset):
-  def __init__(self, data_name, mask_type, flow_size=(448, 256), img_size=(424, 240)):
+  def __init__(self, data_name, mask_type, flow_size=(448, 256), img_size=(432, 240)):
     with open(os.path.join('../flist', data_name, 'test.json'), 'r') as f:
       self.video_dict = json.load(f)
     self.videos = list(self.video_dict.keys())
