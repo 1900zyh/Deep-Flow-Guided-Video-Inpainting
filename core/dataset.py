@@ -82,14 +82,11 @@ class dataset(data.Dataset):
       image_ = cv2.resize(np.array(image_), self.img_size, cv2.INTER_CUBIC)
       gts.append(torch.from_numpy(np.array(image_)).permute(2,0,1).contiguous().float())
 
-      if self.mask_type != 'random_obj':
-        mask_ = self._get_masks(self.img_size, index, video, f)
-        mask_ = cv2.resize(mask_, self.img_size, cv2.INTER_NEAREST)
-        masks.append(torch.from_numpy(mask_).float().unsqueeze(0))
+      mask_ = self._get_masks(self.img_size, index, video, f)
+      mask_ = cv2.resize(mask_, self.img_size, cv2.INTER_NEAREST)
+      masks.append(torch.from_numpy(mask_).float().unsqueeze(0))
       image_ = torch.from_numpy(cv2.resize(image_, self.flow_size, cv2.INTER_CUBIC)).permute(2,0,1).contiguous().float()
       inps.append(image_)
-    if self.mask_type == 'random_obj':
-      masks = [torch.from_numpy(np.array(m).astype(np.uint8)).float().unsqueeze(0) for m in get_video_masks_by_moving_random_stroke(len(frame_names), imageWidth=self.w, imageHeight=self.h)]
 
     gts.append(gts[-1].clone())
     inps.append(inps[-1].clone())
@@ -110,6 +107,13 @@ class dataset(data.Dataset):
       m = np.array(m>0).astype(np.uint8)
       m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_CROSS,(3,3)), iterations=4).astype(np.float32)
       return m
+    elif self.mask_type == 'random_obj': 
+      m_name = self.video_dict[video][i]
+      m = ZipReader.imread('../datazip/random_masks/{}/{}.zip'.format(self.data_name, video),\
+           '{}.png'.format(m_name.split('.jpg')[0])).resize((self.w, self.h))
+      m = np.array(m)
+      m = np.array(m>0).astype(np.uint8)
+      return m 
     else:
       raise NotImplementedError(f"Mask type {self.mask_type} not exists")
 
