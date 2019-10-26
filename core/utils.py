@@ -12,7 +12,7 @@ from PIL import Image, ImageOps, ImageDraw,ImageFilter
 IMG_SIZE = (432, 240)
 w, h = IMG_SIZE
 th_warp=40
-DEFAULT_FPS = 6 
+DEFAULT_FPS = 15
 
 def to_img(img):
   img = img.squeeze().cpu().data.numpy().copy()

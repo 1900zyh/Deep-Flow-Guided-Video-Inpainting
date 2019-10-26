@@ -53,7 +53,7 @@ K = 5
 IMG_SIZE = (432, 240)
 imgw, imgh = IMG_SIZE
 FLOW_SIZE = (448, 256)
-default_fps = 6
+default_fps = 15
 
 def main_worker(gpu, ngpus_per_node):
   if ngpus_per_node > 1:
